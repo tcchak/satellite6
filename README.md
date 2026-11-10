@@ -1,6 +1,6 @@
-# satellite6
+# Satellite 6.x
 
-Satellite 6 knowledge base and workarounds.
+Satellite 6.x additional knowledge base and workarounds.
 
 Practical notes and copy/paste commands for Red Hat Satellite 6 operations—especially **connected** vs **disconnected** (ISS network sync) setups.
 
