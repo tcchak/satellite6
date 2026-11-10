@@ -8,7 +8,7 @@ Practical notes and copy/paste commands for Red Hat Satellite 6 operations—esp
 
 | Document | Topic |
 |----------|--------|
-| [kb-iss-connected-disconnected-hammer.txt](kb-iss-connected-disconnected-hammer.txt) | Self-signed CA trust for remote `hammer`, list enabled repos, sync all repos (ISS pull). Run CLI on **connected**, target **disconnected** with `--server`. |
+| [iss-connected-disconnected-push-workaround](iss-connected-disconnected-push-workaround) | Self-signed CA trust for remote `hammer`, list enabled repos, sync all repos (ISS pull). Run CLI on **connected**, target **disconnected** with `--server`. |
 
 ## Quick start (ISS hammer KB)
 
