@@ -1,6 +1,36 @@
 Knowledge Base: Connected / Disconnected Satellite - CA Bundle and Hammer ISS Sync
 ====================================================================================
 
+START HERE
+----------
+  Audience: Satellite admins running ISS network sync (connected + disconnected).
+
+  Workflow:
+    1. Fix TLS trust on CONNECTED (section 1) so remote hammer works
+    2. Point hammer at DISCONNECTED with --server (section 2)
+    3. List enabled repos on disconnected (section 3)
+    4. Sync all those repos on disconnected (section 4)
+    5. Use checklist / troubleshooting (sections 5-6) as needed
+
+  Critical reminder:
+    Run hammer ON connected Satellite.
+    Use --server to TARGET disconnected Satellite.
+    Connected must already have synced the same content from the Red Hat CDN.
+
+
+CONTENTS
+--------
+  1. Self-signed CA bundle combination (for remote hammer)
+  2. Remote hammer pattern (CLI on connected -> API on disconnected)
+  3. List all added repositories (on disconnected, via remote hammer)
+  4. Sync all added repositories (ISS pull on disconnected)
+  5. Operational checklist
+  6. Troubleshooting
+  7. Quick reference (copy/paste)
+
+
+OVERVIEW
+--------
 This KB covers three operational topics for an Inter-Satellite Sync (ISS)
 network sync layout:
 
@@ -10,7 +40,6 @@ network sync layout:
 
 All hammer examples below are intended to be RUN ON THE CONNECTED SATELLITE,
 while TARGETING THE DISCONNECTED SATELLITE API with --server.
-
 
 PLACEHOLDERS
 ------------
@@ -373,4 +402,3 @@ After sync - re-check repository state
 
   # watch
   "${HAMMER_DISC[@]}" task list --search 'state = running' --organization "$ORG"
-
