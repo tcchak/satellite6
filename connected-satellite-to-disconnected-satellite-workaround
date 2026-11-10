@@ -1,0 +1,310 @@
+# Knowledge Base: Connected / Disconnected Satellite — CA Bundle & Hammer ISS Sync
+
+This KB covers three operational topics for an **Inter-Satellite Sync (ISS) network sync** layout:
+
+1. Trusting **self-signed** Satellite HTTPS certificates for remote `hammer`
+2. **Listing** repositories added on the disconnected Satellite
+3. **Synchronizing** those repositories (ISS pull from connected → disconnected)
+
+All `hammer` examples below are intended to be **run on the connected Satellite**, while **targeting the disconnected Satellite API** with `--server`.
+
+Replace placeholders:
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `YOUR_DISCONNECTED_ADMIN_PASSWORD` | Admin password on disconnected Satellite |
+| `sampleorg` | Organization name (use your real org name) |
+| FQDNs below | Match your DNS / install hostnames |
+
+Example hostnames used in this document:
+
+- **Connected Satellite:** `connected-satellite.example.com` (synced from Red Hat CDN; upstream for ISS)
+- **Disconnected Satellite:** `disconnected-satellite.example.com` (CDN / content source pointed at connected; pulls via ISS network sync)
+
+---
+
+## Architecture (short)
+
+```
+Red Hat CDN ──sync──► Connected Satellite ──ISS network sync──► Disconnected Satellite
+                         (has CDN access)                         (no direct CDN; uses connected)
+```
+
+| Role | Responsibility |
+|------|----------------|
+| **Connected Satellite** | Registers to Red Hat, enables products/repos, syncs content from the CDN. Acts as the **upstream content source** for disconnected. |
+| **Disconnected Satellite** | Manifest imported locally. Content credentials / CDN URL configured to the **connected** Satellite. Enables the same (or subset) repos and **syncs from connected** over the network (ISS). |
+
+**Important:** Enabling a repository on disconnected does **not** download packages by itself. You must run a **repository/product synchronize** on disconnected so it pulls content from connected. Connected must already have those repos synced from the CDN (or the pull will be empty / fail).
+
+---
+
+## 1. Self-signed CA bundle combination (for remote hammer)
+
+### Why this is needed
+
+`hammer` on connected uses TLS when talking to `https://disconnected-satellite.example.com`.
+
+By default Satellite configures hammer with something like:
+
+```yaml
+:ssl:
+  :ssl_ca_file: '/etc/pki/katello/certs/katello-server-ca.crt'
+```
+
+That file normally contains **only the connected Satellite’s CA**. Disconnected has its **own** self-signed Katello CA. Verification then fails with:
+
+```text
+SSL certificate verification failed
+Make sure the location contains an unexpired and valid CA certificate for https://disconnected-satellite...
+```
+
+### What “combined bundle” means
+
+A **combined CA bundle** is a single PEM file that concatenates:
+
+1. Connected Satellite CA (`katello-server-ca.crt` from connected)
+2. Disconnected Satellite CA (`katello-server-ca.crt` published by disconnected)
+
+OpenSSL/hammer can then validate **either** host’s certificate chain when using that file.
+
+> If both Satellites were signed by the **same** custom organizational CA, you typically only need that **one** issuing CA in the trust store—not a per-host combine. The steps below assume **separate self-signed Katello CAs** (common default install).
+
+### Steps (run as root on **connected** Satellite)
+
+```bash
+DISC=https://disconnected-satellite.example.com
+CA_DIR=/etc/pki/katello/certs
+DISC_CA=${CA_DIR}/disconnected-satellite-ca.crt
+COMBINED=${CA_DIR}/katello-server-ca-combined.crt
+ACTIVE=${CA_DIR}/katello-server-ca.crt
+
+# 1) Fetch disconnected CA (published over HTTP(S) on /pub)
+curl -k -fsS "${DISC}/pub/katello-server-ca.crt" -o "${DISC_CA}"
+openssl x509 -in "${DISC_CA}" -noout -subject -issuer -dates
+
+# 2) Backup connected CA
+cp -a "${ACTIVE}" "${ACTIVE}.bak"
+
+# 3) Build combined PEM (connected CA + disconnected CA)
+cat "${ACTIVE}.bak" "${DISC_CA}" > "${COMBINED}"
+chmod 644 "${COMBINED}" "${DISC_CA}"
+
+# 4) Install combined as the file hammer already references
+cp -a "${COMBINED}" "${ACTIVE}"
+
+# 5) Optional but recommended: trust disconnected CA system-wide
+cp -f "${DISC_CA}" /etc/pki/ca-trust/source/anchors/disconnected-satellite-ca.crt
+update-ca-trust extract
+
+# 6) Confirm TLS verify against disconnected
+echo | openssl s_client -connect disconnected-satellite.example.com:443 \
+  -servername disconnected-satellite.example.com \
+  -CAfile "${COMBINED}" 2>&1 | grep 'Verify return code'
+# Expect: Verify return code: 0 (ok)
+```
+
+Ensure `/etc/hammer/cli.modules.d/foreman.yml` still has:
+
+```yaml
+:ssl:
+  :ssl_ca_file: '/etc/pki/katello/certs/katello-server-ca.crt'
+```
+
+(After step 4 that path **is** the combined bundle.)
+
+### Sanity check
+
+```bash
+hammer --server https://disconnected-satellite.example.com \
+  -u admin -p 'YOUR_DISCONNECTED_ADMIN_PASSWORD' \
+  ping
+```
+
+If SSL is fixed, you should **not** see `SSL certificate verification failed`. Auth errors mean TLS worked but credentials are wrong.
+
+---
+
+## 2. Remote hammer pattern (CLI on connected → API on disconnected)
+
+Define a reusable prefix (connected shell):
+
+```bash
+export HAMMER_DISC=(
+  hammer
+  --server https://disconnected-satellite.example.com
+  --username admin
+  --password 'YOUR_DISCONNECTED_ADMIN_PASSWORD'
+)
+
+ORG=sampleorg
+```
+
+Examples below use `"${HAMMER_DISC[@]}"` and `"$ORG"`.
+
+---
+
+## 3. List all added repositories (on disconnected, via remote hammer)
+
+“Added” repositories are those **enabled** under the organization (from the subscription manifest / repository sets).
+
+### List repository instances (what will sync)
+```bash
+# Human-readable table
+"${HAMMER_DISC[@]}" repository list --organization "$ORG"
+
+# CSV (includes Id — useful for sync-by-id)
+"${HAMMER_DISC[@]}" --csv repository list --organization "$ORG"
+```
+
+### List enabled repository sets (what was turned on from the manifest)
+```bash
+"${HAMMER_DISC[@]}" repository-set list \
+  --organization "$ORG" \
+  --enabled true
+```
+
+### List products and how many repos each has
+```bash
+"${HAMMER_DISC[@]}" product list --organization "$ORG"
+"${HAMMER_DISC[@]}" --csv product list --organization "$ORG"
+```
+
+### Optional: confirm org name/label
+```bash
+"${HAMMER_DISC[@]}" organization list
+```
+
+Use the **Title/Name** that matches your environment as `"$ORG"` (this KB uses `sampleorg` as a stand-in).
+
+---
+
+## 4. Sync all added repositories (ISS pull on disconnected)
+
+Connected must already have the same content synced from the CDN. Disconnected sync jobs pull from the configured upstream (connected).
+
+### Option A — Sync by product (recommended)
+
+Sync every product that currently has one or more repositories:
+
+```bash
+ORG=sampleorg
+
+"${HAMMER_DISC[@]}" --csv product list --organization "$ORG" \
+  | awk -F, 'NR>1 && $5+0 > 0 {print $2}' \
+  | while IFS= read -r product; do
+      echo "=== Syncing product: ${product} ==="
+      "${HAMMER_DISC[@]}" product synchronize \
+        --name "$product" \
+        --organization "$ORG" \
+        --async
+    done
+```
+
+`$5` in the CSV is the **Repositories** count column from `hammer --csv product list`. Adjust the column index if your hammer CSV headers differ (`hammer --csv product list --organization "$ORG" | head -1`).
+
+### Option B — Sync every repository by ID
+
+```bash
+ORG=sampleorg
+
+"${HAMMER_DISC[@]}" --csv repository list --organization "$ORG" \
+  | awk -F, 'NR>1 {print $1}' \
+  | while IFS= read -r id; do
+      echo "=== Syncing repository id=${id} ==="
+      "${HAMMER_DISC[@]}" repository synchronize \
+        --id "$id" \
+        --organization "$ORG" \
+        --async
+    done
+```
+
+### Explicit product sync examples
+
+```bash
+ORG=sampleorg
+
+"${HAMMER_DISC[@]}" product synchronize \
+  --name "Red Hat Enterprise Linux for x86_64" \
+  --organization "$ORG" \
+  --async
+
+"${HAMMER_DISC[@]}" product synchronize \
+  --name "Red Hat Satellite" \
+  --organization "$ORG" \
+  --async
+
+"${HAMMER_DISC[@]}" product synchronize \
+  --name "Red Hat Satellite Capsule" \
+  --organization "$ORG" \
+  --async
+```
+
+### Monitor sync tasks on disconnected
+
+```bash
+"${HAMMER_DISC[@]}" task list --search 'state = running' --organization "$ORG"
+
+"${HAMMER_DISC[@]}" task list \
+  --search 'label ~ Actions::Katello::Repository::Sync' \
+  --organization "$ORG" | head
+
+# Follow a specific task:
+# "${HAMMER_DISC[@]}" task progress --id <TASK_UUID>
+# "${HAMMER_DISC[@]}" task info --id <TASK_UUID>
+```
+
+### After sync — re-check repository state
+
+```bash
+"${HAMMER_DISC[@]}" repository list --organization "$ORG"
+"${HAMMER_DISC[@]}" product info \
+  --name "Red Hat Enterprise Linux for x86_64" \
+  --organization "$ORG"
+```
+
+---
+
+## 5. Operational checklist
+
+1. **Connected:** repos enabled and synced from Red Hat CDN.
+2. **Disconnected:** manifest imported; content source / CDN settings point at connected.
+3. **Disconnected:** required repository sets enabled (same labels/releasever/basearch as connected where applicable).
+4. **Connected:** combined CA bundle installed so remote `hammer --server https://disconnected-...` trusts disconnected’s cert.
+5. **From connected:** list repos on disconnected → synchronize products/repos on disconnected → watch tasks until complete.
+
+---
+
+## 6. Troubleshooting
+
+| Symptom | Likely cause | What to check |
+|---------|--------------|----------------|
+| `SSL certificate verification failed` | Connected CA bundle missing disconnected CA | Rebuild combined bundle; confirm `ssl_ca_file`; `openssl s_client ... -CAfile` |
+| Sync completes but no packages | Connected never synced that repo from CDN | On connected: `hammer repository list` / product sync from CDN |
+| Repo missing on disconnected | Repository set not enabled | `repository-set list --enabled true`; enable matching set |
+| `Unable to authenticate` | Wrong user/password for disconnected | Reset/admin password on disconnected; confirm `-u` / `-p` |
+| Sync task fails / timeout | Network path, firewall, or upstream URL | From disconnected, HTTPS to connected; SG/firewall 443; CDN URL on disconnected |
+
+---
+
+## 7. Quick reference (copy/paste)
+
+```bash
+# --- remote hammer to disconnected ---
+HAMMER_DISC=(hammer --server https://disconnected-satellite.example.com -u admin -p 'YOUR_DISCONNECTED_ADMIN_PASSWORD')
+ORG=sampleorg
+
+# list
+"${HAMMER_DISC[@]}" repository list --organization "$ORG"
+"${HAMMER_DISC[@]}" repository-set list --organization "$ORG" --enabled true
+
+# sync all products that have repos
+"${HAMMER_DISC[@]}" --csv product list --organization "$ORG" \
+  | awk -F, 'NR>1 && $5+0 > 0 {print $2}' \
+  | while IFS= read -r p; do
+      "${HAMMER_DISC[@]}" product synchronize --name "$p" --organization "$ORG" --async
+    done
+
+# watch
+"${HAMMER_DISC[@]}" task list --search 'state = running' --organization "$ORG"
+```
