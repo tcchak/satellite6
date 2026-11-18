@@ -6,7 +6,7 @@ START HERE
   Audience: Satellite admins installing Hammer on Capsule and syncing Capsule content.
 
   Workflow:
-    1. Enable satellite-utils 6.19 on Capsule and install satellite-cli
+    1. Disable all repos, then enable Capsule 6.19 + satellite-utils 6.19; install satellite-cli
     2. Trust Satellite CA and point Hammer at connected-satellite
     3. From Capsule, call Satellite API with hammer --server to sync Capsule content
 
@@ -51,8 +51,13 @@ PLACEHOLDERS / EXAMPLE HOSTS
   - On Satellite, the following repos are enabled and synchronized, and available
     to the Capsule host (content view / activation key as applicable):
 
+      # RHEL 9 + Capsule 6.19 required repos
       rhel-9-for-x86_64-baseos-rpms
       rhel-9-for-x86_64-appstream-rpms
+      satellite-capsule-6.19-for-rhel-9-x86_64-rpms
+      satellite-maintenance-6.19-for-rhel-9-x86_64-rpms
+
+      # Utils (satellite-cli / Hammer) — enable with the Capsule set above
       satellite-utils-6.19-for-rhel-9-x86_64-rpms
 
   - Network: Capsule can reach Satellite on TCP 443 (and Satellite can reach
@@ -64,19 +69,30 @@ PLACEHOLDERS / EXAMPLE HOSTS
 
 Run as root on CONNECTED-CAPSULE.
 
-  # Enable utils (BaseOS/AppStream if not already enabled)
+Always disable everything first, then enable only the Capsule 6.19 required
+repos plus satellite-utils (for satellite-cli):
+
+  # 1) Disable all repositories
+  subscription-manager repos --disable "*"
+
+  # 2) Enable Capsule 6.19 required repos + satellite-utils 6.19
   subscription-manager repos \
     --enable=rhel-9-for-x86_64-baseos-rpms \
     --enable=rhel-9-for-x86_64-appstream-rpms \
+    --enable=satellite-capsule-6.19-for-rhel-9-x86_64-rpms \
+    --enable=satellite-maintenance-6.19-for-rhel-9-x86_64-rpms \
     --enable=satellite-utils-6.19-for-rhel-9-x86_64-rpms
 
-  # Install Hammer CLI package
+  # 3) Verify
+  dnf repolist enabled
+
+  # 4) Install Hammer CLI package
   dnf install -y satellite-cli
   hammer --version
 
 If --enable fails with repo not found / not available:
-  - Sync satellite-utils-6.19-for-rhel-9-x86_64-rpms on Satellite
-  - Publish/promote CV and ensure Capsule host can consume that repo
+  - Sync the Capsule 6.19 + satellite-utils-6.19 repos on Satellite
+  - Publish/promote CV and ensure Capsule host can consume those repos
 
 
 3. Trust Satellite CA and configure Hammer
@@ -192,7 +208,12 @@ automatic Capsule sync on every CDN library update (resource intensive).
 -------------------------------
 
   # --- on Capsule: install CLI (6.19) ---
+  subscription-manager repos --disable "*"
   subscription-manager repos \
+    --enable=rhel-9-for-x86_64-baseos-rpms \
+    --enable=rhel-9-for-x86_64-appstream-rpms \
+    --enable=satellite-capsule-6.19-for-rhel-9-x86_64-rpms \
+    --enable=satellite-maintenance-6.19-for-rhel-9-x86_64-rpms \
     --enable=satellite-utils-6.19-for-rhel-9-x86_64-rpms
   dnf install -y satellite-cli
 
@@ -215,8 +236,12 @@ automatic Capsule sync on every CDN library update (resource intensive).
     Fix: Install katello-server-ca.crt into ca-trust; set :ssl_ca_file:;
          openssl s_client ... | grep Verify return code
 
-  Symptom: satellite-utils-6.19-for-rhel-9-x86_64-rpms not available
-    Fix: Sync that repo on Satellite; publish CV; enable on Capsule host.
+  Symptom: Capsule / utils 6.19 repos not available after enable
+    Fix: Sync on Satellite:
+           satellite-capsule-6.19-for-rhel-9-x86_64-rpms
+           satellite-maintenance-6.19-for-rhel-9-x86_64-rpms
+           satellite-utils-6.19-for-rhel-9-x86_64-rpms
+         Publish CV; then on Capsule: repos --disable "*" and re-enable the set.
 
   Symptom: capsule content synchronize succeeds but Capsule empty
     Fix: Add lifecycle environment(s) to Capsule first (section 5).
