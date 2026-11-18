@@ -8,7 +8,8 @@ Practical notes and copy/paste commands for Red Hat Satellite 6 operations—esp
 
 | Document | Topic |
 |----------|--------|
-| [iss-connected-disconnected-push-workaround](iss-connected-disconnected-push-workaround) | Self-signed CA trust for remote `hammer`, list enabled repos, sync all repos (ISS pull). Run CLI on **connected**, target **disconnected** with `--server`. |
+| [satellite-connected-push-to-satellite-disconnected-workaround](satellite-connected-push-to-satellite-disconnected-workaround) | Self-signed CA trust for remote `hammer`, list enabled repos, sync all repos (ISS pull). Run CLI on **connected**, target **disconnected** with `--server`. |
+| [satellite-capsule-push-to-satellite-workaround.txt](satellite-capsule-push-to-satellite-workaround.txt) | Install `satellite-cli` on Capsule (6.19 utils) and sync Capsule content via Hammer with API on **connected-satellite** (run from Capsule). |
 
 ## Quick start (ISS hammer KB)
 

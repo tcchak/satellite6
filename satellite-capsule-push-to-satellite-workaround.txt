@@ -1,0 +1,226 @@
+Knowledge Base: Capsule satellite-cli install + Capsule content sync (Satellite 6.19)
+====================================================================================
+
+START HERE
+----------
+  Audience: Satellite admins installing Hammer on Capsule and syncing Capsule content.
+
+  Workflow:
+    1. Enable satellite-utils 6.19 on Capsule and install satellite-cli
+    2. Trust Satellite CA and point Hammer at connected-satellite
+    3. From Capsule, call Satellite API with hammer --server to sync Capsule content
+
+  Critical reminder:
+    Run hammer ON the Capsule (connected-capsule).
+    Use --server to TARGET the Satellite API (connected-satellite).
+    Capsule has no Foreman API — do NOT point :host: / --server at the Capsule itself.
+
+
+CONTENTS
+--------
+  1. Prerequisites
+  2. Install satellite-cli on Capsule (Satellite 6.19)
+  3. Trust Satellite CA and configure Hammer
+  4. Capsule content sync via Hammer (API = connected-satellite)
+  5. Optional: assign lifecycle environments before sync
+  6. Quick reference (copy/paste)
+  7. Troubleshooting
+
+
+PLACEHOLDERS / EXAMPLE HOSTS
+----------------------------
+
+  connected-satellite.sandbox699.opentlc.com
+      Satellite Server (Hammer API target)
+
+  connected-capsule.sandbox699.opentlc.com
+      Capsule Server (where satellite-cli is installed and hammer is run)
+
+  YOUR_ORG
+      Organization name in Satellite
+
+  YOUR_PASSWORD
+      Satellite admin (or sufficient) password
+
+
+1. Prerequisites
+----------------
+
+  - Satellite 6.19 and Capsule 6.19 installed and registered to each other
+  - Capsule packages installed; Capsule registered in Infrastructure > Capsules
+  - On Satellite, the following repos are enabled and synchronized, and available
+    to the Capsule host (content view / activation key as applicable):
+
+      rhel-9-for-x86_64-baseos-rpms
+      rhel-9-for-x86_64-appstream-rpms
+      satellite-utils-6.19-for-rhel-9-x86_64-rpms
+
+  - Network: Capsule can reach Satellite on TCP 443 (and Satellite can reach
+    Capsule features ports such as 9090 as required by your layout)
+
+
+2. Install satellite-cli on Capsule (Satellite 6.19)
+---------------------------------------------------
+
+Run as root on CONNECTED-CAPSULE.
+
+  # Enable utils (BaseOS/AppStream if not already enabled)
+  subscription-manager repos \
+    --enable=rhel-9-for-x86_64-baseos-rpms \
+    --enable=rhel-9-for-x86_64-appstream-rpms \
+    --enable=satellite-utils-6.19-for-rhel-9-x86_64-rpms
+
+  # Install Hammer CLI package
+  dnf install -y satellite-cli
+  hammer --version
+
+If --enable fails with repo not found / not available:
+  - Sync satellite-utils-6.19-for-rhel-9-x86_64-rpms on Satellite
+  - Publish/promote CV and ensure Capsule host can consume that repo
+
+
+3. Trust Satellite CA and configure Hammer
+------------------------------------------
+
+Run as root on CONNECTED-CAPSULE.
+
+  SAT=connected-satellite.sandbox699.opentlc.com
+
+  # Trust Satellite self-signed CA
+  curl -k -fsS "https://${SAT}/pub/katello-server-ca.crt" \
+    -o /etc/pki/ca-trust/source/anchors/connected-satellite-ca.crt
+  update-ca-trust extract
+
+  echo | openssl s_client -connect ${SAT}:443 -servername ${SAT} 2>&1 \
+    | grep 'Verify return code'
+  # Expect: Verify return code: 0 (ok)
+
+Configure /etc/hammer/cli.modules.d/foreman.yml so the default API is Satellite:
+
+  :foreman:
+    :enable_module: true
+    :host: 'https://connected-satellite.sandbox699.opentlc.com'
+    :use_sessions: true
+    :ssl:
+      :ssl_ca_file: '/etc/pki/ca-trust/source/anchors/connected-satellite-ca.crt'
+
+Authenticate:
+
+  hammer auth login
+  # or pass -u admin -p 'YOUR_PASSWORD' on each command
+
+Sanity check:
+
+  hammer ping
+  hammer organization list
+
+
+4. Capsule content sync via Hammer (API = connected-satellite)
+--------------------------------------------------------------
+
+Always run these ON connected-capsule, targeting connected-satellite.
+
+Even if foreman.yml already has :host:, using --server makes the source explicit.
+
+  # List capsules (confirm name/id)
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule list
+
+  # Sync all content assigned to this Capsule (async)
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronize \
+    --name connected-capsule.sandbox699.opentlc.com \
+    --async
+
+  # Check sync status
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronization-status \
+    --name connected-capsule.sandbox699.opentlc.com
+
+By Capsule id:
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronize --id <CAPSULE_ID> --async
+
+Limit sync (optional):
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronize \
+    --name connected-capsule.sandbox699.opentlc.com \
+    --lifecycle-environment Library \
+    --organization "YOUR_ORG" \
+    --async
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronize \
+    --name connected-capsule.sandbox699.opentlc.com \
+    --content-view "YOUR_CV" \
+    --organization "YOUR_ORG" \
+    --async
+
+Complete sync (skip metadata check):
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content synchronize \
+    --name connected-capsule.sandbox699.opentlc.com \
+    --skip-metadata-check true \
+    --async
+
+
+5. Optional: assign lifecycle environments before sync
+------------------------------------------------------
+
+If Capsule has no lifecycle environments assigned, sync has nothing to pull.
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content available-lifecycle-environments \
+    --name connected-capsule.sandbox699.opentlc.com
+
+  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+    capsule content add-lifecycle-environment \
+    --name connected-capsule.sandbox699.opentlc.com \
+    --lifecycle-environment-id <ENV_ID> \
+    --organization "YOUR_ORG"
+
+Then re-run capsule content synchronize (section 4).
+
+Note: Avoid assigning Library to Capsule in production if you want to prevent
+automatic Capsule sync on every CDN library update (resource intensive).
+
+
+6. Quick reference (copy/paste)
+-------------------------------
+
+  # --- on Capsule: install CLI (6.19) ---
+  subscription-manager repos \
+    --enable=satellite-utils-6.19-for-rhel-9-x86_64-rpms
+  dnf install -y satellite-cli
+
+  # --- on Capsule: point at Satellite + sync Capsule ---
+  SAT=https://connected-satellite.sandbox699.opentlc.com
+  CAP=connected-capsule.sandbox699.opentlc.com
+
+  hammer --server "$SAT" capsule list
+  hammer --server "$SAT" capsule content synchronize --name "$CAP" --async
+  hammer --server "$SAT" capsule content synchronization-status --name "$CAP"
+
+
+7. Troubleshooting
+------------------
+
+  Symptom: hammer fails talking to https://localhost or Capsule FQDN
+    Fix: Set :host: / --server to connected-satellite only.
+
+  Symptom: SSL certificate verification failed
+    Fix: Install katello-server-ca.crt into ca-trust; set :ssl_ca_file:;
+         openssl s_client ... | grep Verify return code
+
+  Symptom: satellite-utils-6.19-for-rhel-9-x86_64-rpms not available
+    Fix: Sync that repo on Satellite; publish CV; enable on Capsule host.
+
+  Symptom: capsule content synchronize succeeds but Capsule empty
+    Fix: Add lifecycle environment(s) to Capsule first (section 5).
+
+  Symptom: Could not load the API description from the server
+    Fix: Confirm Satellite is up on :443; hammer --server points at Satellite;
+         credentials valid; CA trust OK.
