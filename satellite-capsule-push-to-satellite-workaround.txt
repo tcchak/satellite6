@@ -30,10 +30,10 @@ CONTENTS
 PLACEHOLDERS / EXAMPLE HOSTS
 ----------------------------
 
-  connected-satellite.sandbox699.opentlc.com
+  connected-satellite.example.com
       Satellite Server (Hammer API target)
 
-  connected-capsule.sandbox699.opentlc.com
+  connected-capsule.example.com
       Capsule Server (where satellite-cli is installed and hammer is run)
 
   YOUR_ORG
@@ -100,7 +100,7 @@ If --enable fails with repo not found / not available:
 
 Run as root on CONNECTED-CAPSULE.
 
-  SAT=connected-satellite.sandbox699.opentlc.com
+  SAT=connected-satellite.example.com
 
   # Trust Satellite self-signed CA
   curl -k -fsS "https://${SAT}/pub/katello-server-ca.crt" \
@@ -115,7 +115,7 @@ Configure /etc/hammer/cli.modules.d/foreman.yml so the default API is Satellite:
 
   :foreman:
     :enable_module: true
-    :host: 'https://connected-satellite.sandbox699.opentlc.com'
+    :host: 'https://connected-satellite.example.com'
     :use_sessions: true
     :ssl:
       :ssl_ca_file: '/etc/pki/ca-trust/source/anchors/connected-satellite-ca.crt'
@@ -139,46 +139,46 @@ Always run these ON connected-capsule, targeting connected-satellite.
 Even if foreman.yml already has :host:, using --server makes the source explicit.
 
   # List capsules (confirm name/id)
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule list
 
   # Sync all content assigned to this Capsule (async)
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronize \
-    --name connected-capsule.sandbox699.opentlc.com \
+    --name connected-capsule.example.com \
     --async
 
   # Check sync status
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronization-status \
-    --name connected-capsule.sandbox699.opentlc.com
+    --name connected-capsule.example.com
 
 By Capsule id:
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronize --id <CAPSULE_ID> --async
 
 Limit sync (optional):
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronize \
-    --name connected-capsule.sandbox699.opentlc.com \
+    --name connected-capsule.example.com \
     --lifecycle-environment Library \
     --organization "YOUR_ORG" \
     --async
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronize \
-    --name connected-capsule.sandbox699.opentlc.com \
+    --name connected-capsule.example.com \
     --content-view "YOUR_CV" \
     --organization "YOUR_ORG" \
     --async
 
 Complete sync (skip metadata check):
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content synchronize \
-    --name connected-capsule.sandbox699.opentlc.com \
+    --name connected-capsule.example.com \
     --skip-metadata-check true \
     --async
 
@@ -188,13 +188,13 @@ Complete sync (skip metadata check):
 
 If Capsule has no lifecycle environments assigned, sync has nothing to pull.
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content available-lifecycle-environments \
-    --name connected-capsule.sandbox699.opentlc.com
+    --name connected-capsule.example.com
 
-  hammer --server https://connected-satellite.sandbox699.opentlc.com \
+  hammer --server https://connected-satellite.example.com \
     capsule content add-lifecycle-environment \
-    --name connected-capsule.sandbox699.opentlc.com \
+    --name connected-capsule.example.com \
     --lifecycle-environment-id <ENV_ID> \
     --organization "YOUR_ORG"
 
@@ -218,8 +218,8 @@ automatic Capsule sync on every CDN library update (resource intensive).
   dnf install -y satellite-cli
 
   # --- on Capsule: point at Satellite + sync Capsule ---
-  SAT=https://connected-satellite.sandbox699.opentlc.com
-  CAP=connected-capsule.sandbox699.opentlc.com
+  SAT=https://connected-satellite.example.com
+  CAP=connected-capsule.example.com
 
   hammer --server "$SAT" capsule list
   hammer --server "$SAT" capsule content synchronize --name "$CAP" --async

@@ -25,9 +25,9 @@ CDN ──► connected-satellite ──► disconnected-satellite   (ISS)
 
 | Role | Example FQDN | What it does in these KBs |
 |------|--------------|---------------------------|
-| Connected Satellite | `connected-satellite.sandbox699.opentlc.com` | CDN sync; Hammer API for Capsule; ISS source |
-| Disconnected Satellite | `disconnected-satellite.sandbox699.opentlc.com` | ISS target; remote Hammer `--server` |
-| Capsule | `connected-capsule.sandbox699.opentlc.com` | Runs `satellite-cli`; syncs *via* Satellite API |
+| Connected Satellite | `connected-satellite.example.com` | CDN sync; Hammer API for Capsule; ISS source |
+| Disconnected Satellite | `disconnected-satellite.example.com` | ISS target; remote Hammer `--server` |
+| Capsule | `connected-capsule.example.com` | Runs `satellite-cli`; syncs *via* Satellite API |
 
 ---
 
@@ -78,7 +78,7 @@ Replace in every KB before running:
 |-------------|---------|
 | `sampleorg` / `YOUR_ORG` | Organization name |
 | `YOUR_DISCONNECTED_ADMIN_PASSWORD` / `YOUR_PASSWORD` | Admin (or equivalent) password |
-| `*.sandbox699.opentlc.com` | Your lab/prod FQDNs |
+| `*.example.com` | Your lab/prod FQDNs |
 
 ---
 
